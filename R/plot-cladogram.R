@@ -142,6 +142,7 @@ plot_cladogram <- function(mm,
         level = .data$level
     ) %>%
         dplyr::arrange(desc(.data$level))
+    clade_label$level[is.na(clade_label$level)]<-clade_label_level+1###no idea why NA 
     ind <- clade_label$level < clade_label_level###change here by lucy
     short_label <- get_short_label_id(clade_label, clade_label_level)
     clade_label_para <- mutate(
