@@ -142,7 +142,7 @@ plot_cladogram <- function(mm,
         level = .data$level
     ) %>%
         dplyr::arrange(desc(.data$level))
-    ind <- clade_label$level < clade_label_level
+    ind <- clade_label$level < clade_label_level###change here by lucy
     short_label <- get_short_label_id(clade_label, clade_label_level)
     clade_label_para <- mutate(
         clade_label,
@@ -182,8 +182,8 @@ plot_cladogram <- function(mm,
 #' @noRd
 get_short_label_id <- function(clade_label, clade_label_level) {
     ind <- clade_label$level < clade_label_level
-    unique_id <- get_unique_id(sum(ind))
-    short_label <- unique_id[seq_len(sum(ind))]
+    unique_id <- get_unique_id(sum(ind,na.rm=T))
+    short_label <- unique_id[seq_len(sum(ind,na.rm=T))]
 
     short_label
 }
