@@ -1,14 +1,22 @@
-citHeader("Please cite the package as follows:")
+citHeader("To cite microbiomeMarker in publications use:")
 
-citEntry(entry="misc",
-  title = "microbiome R package",
-  author = person(given ="Yang", family="Cao", 
-    email = "caoyang.name@gmail.com"),
-  journal = "",
-  year = "2021",
-  textVersion = paste(
-    "microbiomeMarker: microbiome biomarker analysis toolkit.",
-    "R package version 0.99.0.", 
-    "https://github.com/yiluheihei/microbiomeMarker."),
-  doi = "https://doi.org/10.5281/zenodo.3749415"
+citEntry(
+    entry  = "article",
+    title  = "microbiomeMarker: an R/Bioconductor package for microbiome marker identification and visualization",
+    author = personList(
+        as.person("Yang Cao"),
+        as.person("Qingyang Dong"),
+        as.person("Dan Wang"),
+        as.person("Pengcheng Zhang"),
+        as.person("Ying Liu"),
+        as.person("Chao Niu")
+        ),
+    journal = "Bioinformatics",
+    year    = "2022",
+    month   = "06",
+    doi     = "10.1093/bioinformatics/btac438",
+    PMID    = "35771644",
+    textVersion = paste("Yang Cao, Qingyang Dong, Dan Wang, Pengcheng Zhang, Ying Liu, Chao Niu.",
+                        "microbiomeMarker: an R/Bioconductor package for microbiome marker identification and visualization.",
+                        "Bioinformatics, 2022, btac438. doi: 10.1093/bioinformatics/btac438")
 )

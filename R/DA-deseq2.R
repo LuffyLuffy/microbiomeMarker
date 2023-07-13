@@ -36,9 +36,11 @@
 #' Differential expression analysis based on the Negative Binomial distribution
 #' using **DESeq2**.
 #'
-#' @param ps  ps a [`phyloseq::phyloseq-class`] object.
+#' @param ps  a [`phyloseq::phyloseq-class`] object.
 #' @param group  character, the variable to set the group, must be one of
 #'   the var of the sample metadata.
+#' @param confounders character vector, the confounding variables to be adjusted.
+#'   default `character(0)`, indicating no confounding variable.
 #' @param contrast this parameter only used for two groups comparison while
 #'   there are multiple groups. For more please see the following details.
 #' @param taxa_rank character to specify taxonomic rank to perform
@@ -146,12 +148,12 @@
 #' data(enterotypes_arumugam)
 #' ps <- phyloseq::subset_samples(
 #'     enterotypes_arumugam,
-#'     Enterotype %in% c("Enterotype 3", "Enterotype 2")
-#' ) %>%
+#'     Enterotype %in% c("Enterotype 3", "Enterotype 2")) %>%
 #'     phyloseq::subset_taxa(Phylum %in% c("Firmicutes"))
 #' run_deseq2(ps, group = "Enterotype")
 run_deseq2 <- function(ps,
     group,
+    confounders = character(0),
     contrast = NULL,
     taxa_rank = "all",
     norm = "RLE",
@@ -180,21 +182,23 @@ run_deseq2 <- function(ps,
             call. = FALSE
         )
     }
+    
+    if (length(confounders)) {
+        confounders <- check_confounder(ps, group, confounders)
+    }
 
     # groups
-    sam_tab <- sample_data(ps)
-    if (!group %in% names(sam_tab)) {
-        stop(
-            "`group` should one of the variable in the `sample_data` of ps",
-            call. = FALSE
-        )
+    meta <- sample_data(ps)
+    groups <- meta[[group]]
+    groups <- make.names(groups)
+    if (!is.null(contrast)) {
+        contrast <- make.names(contrast)
     }
-    groups <- sam_tab[[group]]
     if (!is.factor(groups)) {
         groups <- factor(groups)
-        sam_tab[[group]] <- groups
-        sample_data(ps) <- sam_tab
     }
+    groups <- set_lvl(groups, contrast)
+    sample_data(ps)[[group]] <- groups
     lvl <- levels(groups)
     n_lvl <- length(lvl)
 
@@ -251,7 +255,16 @@ run_deseq2 <- function(ps,
     norm_para <- c(norm_para, method = norm, object = list(ps))
     ps_normed <- do.call(normalize, norm_para)
     ps_summarized <- pre_ps_taxa_rank(ps_normed, taxa_rank)
-    dsg <- formula(paste("~", group))
+    
+    if (!length(confounders)) {
+        dsg <- formula(paste("~", group))
+    } else {
+        dsg <- formula(paste(
+            "~", 
+            paste(c(confounders, group), collapse = " + ")
+        ))
+    }
+    
     dds_summarized <- phyloseq2DESeq2(
         ps_summarized,
         design = dsg
@@ -414,8 +427,13 @@ run_deseq2 <- function(ps,
         enrich_group <- ifelse(res$logFC > 0, contrast_new[2], contrast_new[3])
     } else {
         cf <- coef(dds_summarized)
-        # the first coef is intercept, set the coef of the reference group as 0
-        cf[, 1] <- 0
+        
+        # extract coef of interested var
+        target_idx <- grepl(group, colnames(cf))
+        cf <- cf[, target_idx]
+        # the first coef is intercept, bind the coef of the reference group as 0
+        # (the first column)
+        cf <- cbind(0, cf)
         enrich_idx <- apply(
             cf, 1,
             function(x) ifelse(any(is.na(x)), NA, which.max(x))
@@ -447,7 +465,9 @@ run_deseq2 <- function(ps,
 
     marker <- microbiomeMarker(
         marker_table = marker,
-        norm_method = get_norm_method(norm),
+        # if no pre-calculated size factors, DESeq2 will calculate the 
+        # size factors internally, so norm method shoule be RLE
+        norm_method = ifelse(is.null(nf), "RLE", get_norm_method(norm)),
         diff_method = paste0("DESeq2: ", test),
         sam_data = sample_data(ps_normed),
         tax_table = tax_table(ps_summarized),
@@ -507,12 +527,12 @@ phyloseq2DESeq2 <- function(ps, design, ...) {
     if (inherits(dds, "error") &&
         conditionMessage(dds) == "some values in assay are not integers") {
         warning(
-            "Not all reads are integers, the reads are ceiled to integers.\n",
-            "   Raw reads is recommended from the ALDEx2 paper.",
+            "Some counts are non-integers, they are rounded to integers.\n",
+            "Raw count is recommended for reliable results for deseq2 method.",
             call. = FALSE
         )
         dds <- DESeq2::DESeqDataSetFromMatrix(
-            countData = ceiling(ct),
+            countData = round(ct),
             colData = data.frame(samp),
             design = design,
             ...

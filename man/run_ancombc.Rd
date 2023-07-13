@@ -8,14 +8,14 @@
 run_ancombc(
   ps,
   group,
-  formula,
+  confounders = character(0),
   contrast = NULL,
   taxa_rank = "all",
   transform = c("identity", "log10", "log10p"),
   norm = "none",
   norm_para = list(),
   p_adjust = c("none", "fdr", "bonferroni", "holm", "hochberg", "hommel", "BH", "BY"),
-  zero_cut = 0.9,
+  prv_cut = 0.1,
   lib_cut = 0,
   struc_zero = FALSE,
   neg_lb = FALSE,
@@ -33,8 +33,8 @@ table, a sample metadata and a taxonomy table.}
 \code{group} is required for detecting structural zeros and performing
 global test.}
 
-\item{formula}{the character string expresses how the microbial absolute
-abundances for each taxon depend on the variables in metadata.}
+\item{confounders}{character vector, the confounding variables to be adjusted.
+default \code{character(0)}, indicating no confounding variable.}
 
 \item{contrast}{this parameter only used for two groups comparison while
 there are multiple groups. For more please see the following details.}
@@ -89,9 +89,9 @@ arguments here.}
 Options include "holm", "hochberg", "hommel", "bonferroni", "BH", "BY",
 "fdr", "none". See \code{\link[stats:p.adjust]{stats::p.adjust()}} for more details.}
 
-\item{zero_cut}{a numerical fraction between 0 and 1. Taxa with proportion of
-zeroes greater than \code{zero_cut} will be excluded in the analysis. Default
-is 0.90.}
+\item{prv_cut}{a numerical fraction between 0 and 1. Taxa with prevalences
+less than \code{prv_cut} will be excluded in the analysis. Default
+is 0.10.}
 
 \item{lib_cut}{a numerical threshold for filtering samples based on library
 sizes. Samples with library sizes less than \code{lib_cut} will be excluded
@@ -141,7 +141,7 @@ ps <- phyloseq::subset_samples(
     enterotypes_arumugam,
     Enterotype \%in\% c("Enterotype 3", "Enterotype 2")
 )
-run_ancombc(ps, group = "Enterotype", formula = "Enterotype")
+run_ancombc(ps, group = "Enterotype")
 }
 \references{
 Lin, Huang, and Shyamal Das Peddada. "Analysis of compositions of microbiomes

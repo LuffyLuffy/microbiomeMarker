@@ -35,7 +35,7 @@ check_rank_names <- function(ps) {
             )
         }
     }
-    
+
     invisible(ps)
 }
 
@@ -288,20 +288,63 @@ remove_na_samples <- function(ps, group) {
 }
 
 
-## create contrast for edgeR, metagenomeSeq, and DESeq2
-
-# For two groups (contrast is a two-length vector), return a vector
-# in which the element 1 demotes the experiment group and -1 specifies the
-# reference (control) group.
+## calculate coef for edgeR, metagenomeSeq
+# if contrast is a two length character, set the first element as the first level
+# (reference group), the second element as the second level, return a single
+# integer
 #
-# For multiple groups, return a matrix, consists of all pair-wise comparisons
-# (contrasts) for anova-like test.
-create_contrast <- function(groups, contrast = NULL) {
-    if (!is.factor(groups)) {
-        groups <- factor(groups)
+# if contrast is null, return a integer vector (number of levels - 1)
+check_contrast <- function(contrast) {
+    if (!is.null(contrast)) {
+        if (!is.character(contrast) || length(contrast) != 2) {
+            stop("`contrast` must be a two length character", call. = FALSE)
+        }
     }
+
+    contrast
+}
+
+set_lvl <- function(groups, contrast) {
+    if (!is.factor(groups)) {
+        stop("`groups` must be a factor", call. = FALSE)
+    }
+    # this will will change the elements simultaneously
+    # levels(groups) <- c(contrast, setdiff(levels(groups), contrast))
+    groups <- factor(
+        groups,
+        levels =  c(contrast, setdiff(levels(groups), contrast))
+    )
+
+    groups
+}
+
+create_design <- function(groups, meta, confounders = character(0)) {
+    if (inherits(meta, "sample_data")) {
+        meta <- data.frame(meta)
+    }
+    model_data <- data.frame(group = groups)
+    if (!length(confounders)) {
+        design <- stats::model.matrix(~ group, data = model_data)
+    } else {
+        model_data[confounders] <- meta[confounders]
+        design <- stats::model.matrix(
+            formula(paste(
+                "~ + ",
+                paste(c(confounders, "group"), collapse = " + "))),
+            data = model_data
+        )
+    }
+
+    design
+}
+
+calc_coef <- function(groups, design, contrast = NULL) {
+    contrast <- check_contrast(contrast)
+    groups <- set_lvl(groups, contrast)
     lvl <- levels(groups)
     n_lvl <- length(lvl)
+    n_design <- ncol(design)
+
     if (n_lvl < 2) {
         stop("Differential analysis requires at least two groups.")
     }
@@ -313,56 +356,85 @@ create_contrast <- function(groups, contrast = NULL) {
                 call. = FALSE
             )
         }
-        design <- rep(0, n_lvl)
-        design[1] <- -1
-        design[2] <- 1
+        coef <- n_design
     } else { # multiple groups
         if (!is.null(contrast)) {
-            if (!is.character(contrast) || length(contrast) != 2) {
-                stop("`contrast` must be a two length character", call. = FALSE)
-            }
-
-            idx <- match(contrast, lvl, nomatch = 0L)
-            if (!all(idx)) {
-                stop(
-                    "all elements of `contrast` must be contained in `groups`",
-                    call. = FALSE
-                )
-            }
-            design <- rep(0, n_lvl)
-            design[idx[1]] <- -1
-            design[idx[2]] <- 1
-            design <- matrix(design)
-            row.names(design) <- lvl
-            colnames(design) <- paste0(contrast[2], "-", contrast[1])
+            coef <- n_design - n_lvl + 2L
         } else {
-            design <- create_pairwise_contrast(lvl)
+            coef <- (n_design - n_lvl + 2L):n_design
         }
     }
 
-    design
+    coef
 }
 
-# create all pair-wise comparisons (contrasts) for anova-like test
-create_pairwise_contrast <- function(groups) {
-    groups <- factor(groups)
-    lvl <- levels(groups)
-    n <- length(lvl)
-
-    design <- matrix(0, n, choose(n, 2))
-    rownames(design) <- lvl
-    colnames(design) <- seq_len(choose(n, 2))
-    k <- 0
-    for (i in seq_len(n - 1)) {
-        for (j in (i + 1):n) {
-            k <- k + 1
-            design[j, k] <- 1
-            design[i, k] <- -1
-            colnames(design)[k] <- paste(lvl[j], "-", lvl[i], sep = "")
-        }
-    }
-    design
-}
+# create_contrast <- function(groups, contrast = NULL) {
+#     if (!is.factor(groups)) {
+#         groups <- factor(groups)
+#     }
+#     lvl <- levels(groups)
+#     n_lvl <- length(lvl)
+#     if (n_lvl < 2) {
+#         stop("Differential analysis requires at least two groups.")
+#     }
+#
+#     if (n_lvl == 2) { # two groups
+#         if (!is.null(contrast)) {
+#             warning(
+#                 "`contrast` is ignored, you do not need to set it",
+#                 call. = FALSE
+#             )
+#         }
+#         design <- rep(0, n_lvl)
+#         design[1] <- -1
+#         design[2] <- 1
+#     } else { # multiple groups
+#         if (!is.null(contrast)) {
+#             if (!is.character(contrast) || length(contrast) != 2) {
+#                 stop("`contrast` must be a two length character", call. = FALSE)
+#             }
+#
+#             idx <- match(contrast, lvl, nomatch = 0L)
+#             if (!all(idx)) {
+#                 stop(
+#                     "all elements of `contrast` must be contained in `groups`",
+#                     call. = FALSE
+#                 )
+#             }
+#             design <- rep(0, n_lvl)
+#             design[idx[1]] <- -1
+#             design[idx[2]] <- 1
+#             design <- matrix(design)
+#             row.names(design) <- lvl
+#             colnames(design) <- paste0(contrast[2], "-", contrast[1])
+#         } else {
+#             design <- create_pairwise_contrast(lvl)
+#         }
+#     }
+#
+#     design
+# }
+#
+# # create all pair-wise comparisons (contrasts) for anova-like test
+# create_pairwise_contrast <- function(groups) {
+#     groups <- factor(groups)
+#     lvl <- levels(groups)
+#     n <- length(lvl)
+#
+#     design <- matrix(0, n, choose(n, 2))
+#     rownames(design) <- lvl
+#     colnames(design) <- seq_len(choose(n, 2))
+#     k <- 0
+#     for (i in seq_len(n - 1)) {
+#         for (j in (i + 1):n) {
+#             k <- k + 1
+#             design[j, k] <- 1
+#             design[i, k] <- -1
+#             colnames(design)[k] <- paste(lvl[j], "-", lvl[i], sep = "")
+#         }
+#     }
+#     design
+# }
 
 
 # extract the specify rank of phyloseq object, return a phyloseq object
@@ -403,7 +475,7 @@ check_taxa_rank <- function(ps, taxa_rank) {
     all_taxa_rank <- c("all", "none", ranks)
     if (!taxa_rank %in% all_taxa_rank) {
         stop(
-            "`taxa_rank` must be one of ", 
+            "`taxa_rank` must be one of ",
             paste(all_taxa_rank, collapse = ", "),
             call. = FALSE
         )
@@ -419,7 +491,7 @@ pre_ps_taxa_rank <- function(ps, taxa_rank) {
                 " and it will be ignored")
         return(ps)
     }
-    
+
     ps <- check_taxa_rank(ps, taxa_rank)
     if (taxa_rank == "all") {
         ps_orig_summarized <- summarize_taxa(ps)
@@ -429,16 +501,16 @@ pre_ps_taxa_rank <- function(ps, taxa_rank) {
         ps_orig_summarized <- aggregate_taxa(ps, taxa_rank) %>%
             extract_rank(taxa_rank)
     }
-    
+
     return(ps_orig_summarized)
 }
 
-# return the marker_table, if no significant marker return all the features
+# return the marker_table, if no significant marker return NULL
 return_marker <- function(sig_feature, all_feature) {
     if (nrow(sig_feature)) {
         row.names(sig_feature) <- paste0("marker", seq_len(nrow(sig_feature)))
         marker <- marker_table(sig_feature)
-        
+
     } else {
         warning("No marker was identified", call. = FALSE)
         marker <- NULL
@@ -473,7 +545,7 @@ calc_ef_md_f <- function(feature_abd, group) {
     ef
 }
 
-# create phyloseq from microbiomeMarker object, 
+# create phyloseq from microbiomeMarker object,
 # and keep only nodes correlated with significant features
 create_ps_from_mm <- function(mm, only_marker = TRUE) {
     ot <- otu_table(mm)
@@ -481,7 +553,7 @@ create_ps_from_mm <- function(mm, only_marker = TRUE) {
     st <- sample_data(mm)
     mt <- marker_table(mm)
     sig_features <- mt$feature
-    
+
     # extract all nodes correlated with the significant features
     # First, all parent nodes of marker
     down_nodes <- strsplit(sig_features, "|", fixed = TRUE) %>%
@@ -490,7 +562,7 @@ create_ps_from_mm <- function(mm, only_marker = TRUE) {
     down_nodes <- unique(unlist(down_nodes))
     # Two, all children nodes of marker
     all_features <- tt@.Data[, 1]
-    up_nodes <- purrr::map(sig_features, 
+    up_nodes <- purrr::map(sig_features,
                ~ all_features[grepl(.x, all_features, fixed = TRUE)])
     up_nodes <- unique(unlist(up_nodes))
     idx <- match(unique(c(down_nodes, up_nodes)), all_features)
@@ -500,7 +572,41 @@ create_ps_from_mm <- function(mm, only_marker = TRUE) {
         tt <- tt[idx, ]
     }
     ps <- phyloseq(ot, tt, st)
-    
-    ps
-} 
 
+    ps
+}
+
+# check confounder
+check_confounder <- function(ps, target_var, confounders = NULL) {
+    meta <- sample_data(ps)
+    vars <- names(meta)
+
+    if (! target_var %in% vars) {
+        stop(
+            "the interested var `target_var` must be contained in the meta data",
+            call. = FALSE
+        )
+    }
+
+    other_vars <- setdiff(vars, target_var)
+
+     if (is.null(confounders)) {
+        confounders <- other_vars
+        if (! length(confounders)) {
+            stop("No confounding var in sample meta data")
+        }
+    } else {
+        out_confounder <- setdiff(confounders, other_vars)
+        if (length(out_confounder)) {
+            stop("var(s) `", paste(out_confounder, collapse = "`, ` "),
+                 "` not be contained in the sample meta data")
+        }
+    }
+
+    confounders
+}
+
+# generate n spaces character
+space <- function(n) {
+    paste(rep(" ", each = n), collapse = "")
+}

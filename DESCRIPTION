@@ -1,6 +1,6 @@
 Package: microbiomeMarker
 Title: microbiome biomarker analysis toolkit
-Version: 1.1.1
+Version: 1.3.3
 Authors@R: 
     person(given = "Yang",
            family = "Cao",
@@ -55,9 +55,12 @@ Imports:
     limma,
     ALDEx2,
     multtest,
-    plotROC
+    plotROC,
+    vegan,
+    pROC,
+    BiocParallel
 Encoding: UTF-8
-RoxygenNote: 7.1.2
+RoxygenNote: 7.2.1
 Roxygen: list(markdown = TRUE)
 Suggests: 
     testthat,
@@ -69,5 +72,7 @@ Suggests:
     ranger,
     knitr,
     rmarkdown,
-    BiocStyle
+    BiocStyle,
+    withr
 VignetteBuilder: knitr
+Config/testthat/edition: 3

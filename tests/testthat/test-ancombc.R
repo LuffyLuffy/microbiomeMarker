@@ -12,7 +12,7 @@ test_that("ancombc works correctly", {
             severeobese = "obese",
             morbidobese = "obese"
         )
-        sample_data(pseq)$nation <- recode(
+        sample_data(pseq)$nation <- dplyr::recode(
             sample_data(pseq)$nationality,
             Scandinavia = "NE",
             UKIE = "NE",
@@ -28,7 +28,7 @@ test_that("ancombc works correctly", {
             phyloseq = phylum_data,
             formula = "nation",
             p_adj_method = "holm",
-            zero_cut = 0.90,
+            prv_cut = 0.10,
             lib_cut = 1000,
             group = "nation",
             struc_zero = FALSE,
@@ -40,7 +40,7 @@ test_that("ancombc works correctly", {
             global = TRUE
         )
         group_lvls <- levels(phyloseq::sample_data(phylum_data)[["nation"]])
-        ef <- out$res$beta
+        ef <- out$res$lfc
 
         # extract enrich groups according the effect size
         #
@@ -67,7 +67,7 @@ test_that("ancombc works correctly", {
         res <- data.frame(
             feature = paste0("p__", rownames(global_res)),
             enrich_group = global_res$enrich_group,
-            effect_size = global_res$W,
+            ef_W = global_res$W,
             pvalue = global_res$p_val,
             padj = global_res$q_val
         )
@@ -76,9 +76,8 @@ test_that("ancombc works correctly", {
 
         out2 <- run_ancombc(
             phylum_data,
-            formula = "nation",
             p_adjust = "holm",
-            zero_cut = 0.90,
+            prv_cut = 0.10,
             lib_cut = 1000,
             group = "nation",
             struc_zero = FALSE,

@@ -37,15 +37,11 @@ test_that("identify structural zeros", {
 test_that("ancom result", {
     ancom_res <- run_ancom(
         ecam, "delivery",
-        test = "wilcox.test",
         p_adjust = "BH",
         W_cutoff = 0,
         taxa_rank = "Class"
     )
     curr_marker <- marker_table(ancom_res)
-    expect_known_output(
-        print(head(curr_marker), digits = 5),
-        test_path("out/test-ancom_marker.txt"),
-        print = TRUE
-    )
+    
+    expect_snapshot(print(head(curr_marker), digits = 5))
 })

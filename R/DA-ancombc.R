@@ -9,10 +9,10 @@
 #' @param group the name of the group variable in metadata. Specifying
 #'   `group` is required for detecting structural zeros and performing
 #'   global test.
+#' @param confounders character vector, the confounding variables to be adjusted.
+#'   default `character(0)`, indicating no confounding variable.
 #' @param contrast this parameter only used for two groups comparison while
 #'   there are multiple groups. For more please see the following details.
-#' @param formula the character string expresses how the microbial absolute
-#'   abundances for each taxon depend on the variables in metadata.
 #' @param taxa_rank character to specify taxonomic rank to perform
 #'   differential analysis on. Should be one of
 #'   `phyloseq::rank_names(phyloseq)`, or "all" means to summarize the taxa by
@@ -54,9 +54,9 @@
 #' @param p_adjust method to adjust p-values by. Default is "holm".
 #'   Options include "holm", "hochberg", "hommel", "bonferroni", "BH", "BY",
 #'   "fdr", "none". See [`stats::p.adjust()`] for more details.
-#' @param zero_cut a numerical fraction between 0 and 1. Taxa with proportion of
-#'   zeroes greater than `zero_cut` will be excluded in the analysis. Default
-#'   is 0.90.
+#' @param prv_cut a numerical fraction between 0 and 1. Taxa with prevalences
+#'   less than `prv_cut` will be excluded in the analysis. Default
+#'   is 0.10.
 #' @param lib_cut a numerical threshold for filtering samples based on library
 #'   sizes. Samples with library sizes less than `lib_cut` will be excluded
 #'   in the analysis. Default is 0, i.e. do not filter any sample.
@@ -102,10 +102,10 @@
 #'     enterotypes_arumugam,
 #'     Enterotype %in% c("Enterotype 3", "Enterotype 2")
 #' )
-#' run_ancombc(ps, group = "Enterotype", formula = "Enterotype")
+#' run_ancombc(ps, group = "Enterotype")
 run_ancombc <- function(ps,
     group,
-    formula,
+    confounders = character(0),
     contrast = NULL,
     taxa_rank = "all",
     transform = c("identity", "log10", "log10p"),
@@ -115,7 +115,7 @@ run_ancombc <- function(ps,
         "none", "fdr", "bonferroni", "holm",
         "hochberg", "hommel", "BH", "BY"
     ),
-    zero_cut = 0.9,
+    prv_cut = 0.1,
     lib_cut = 0,
     struc_zero = FALSE,
     neg_lb = FALSE,
@@ -124,19 +124,11 @@ run_ancombc <- function(ps,
     conserve = FALSE,
     pvalue_cutoff = 0.05) {
     stopifnot(inherits(ps, "phyloseq"))
-    ps <- check_rank_names(ps) %>% 
+    ps <- check_rank_names(ps) %>%
         check_taxa_rank( taxa_rank)
 
-    # check whether group is valid, write a function
-    sample_meta <- sample_data(ps)
-    meta_nms <- names(sample_meta)
-    if (!is.null(group)) {
-        if (!group %in% meta_nms) {
-            stop(
-                group, " are not contained in the `sample_data` of `ps`",
-                call. = FALSE
-            )
-        }
+    if (length(confounders)) {
+        confounders <- check_confounder(ps, group, confounders)
     }
 
     # if it contains missing values for any
@@ -144,10 +136,33 @@ run_ancombc <- function(ps,
     # estimate for this sample will return NA since the sampling fraction is
     # not estimable with the presence of missing values.
     # remove this samples
-    vars_formula <- all.vars(stats::as.formula(paste("~", formula)))
-    for (var in vars_formula) {
+    fml_char <- ifelse(length(confounders),
+                       paste(c(confounders, group), collapse = " + "),
+                       group)
+    # fml_char <- paste(c(confounders, group), collapse = " + ")
+    # fml <- stats::as.formula(paste("~", fml_char))
+    # vars_fml <- all.vars(fml)
+    for (var in c(confounders, group)) {
         ps <- remove_na_samples(ps, var)
     }
+
+    # check whether group is valid, write a function
+    meta <- sample_data(ps)
+    meta_nms <- names(meta)
+    groups <- meta[[group]]
+    groups <- make.names(groups)
+    if (!is.null(contrast)) {
+        contrast <- make.names(contrast)
+    }
+    if (!is.factor(groups)) {
+        groups <- factor(groups)
+    }
+    groups <- set_lvl(groups, contrast)
+    sample_data(ps)[[group]] <- groups
+    lvl <- levels(groups)
+    n_lvl <- length(lvl)
+
+    contrast <- check_contrast(contrast)
 
     transform <- match.arg(transform, c("identity", "log10", "log10p"))
     p_adjust <- match.arg(
@@ -158,20 +173,11 @@ run_ancombc <- function(ps,
         )
     )
 
-    groups <- sample_data(ps)[[group]]
-    if (!is.factor(groups)) {
-        groups <- factor(groups)
-    }
-    lvl <- levels(groups)
-    n_lvl <- length(lvl)
-    # just for check the argument contrast, contrast_new is useless in ANCOMBC
-    contrast_new <- create_contrast(groups, contrast)
-
     # set the reference level for pair-wise comparison from mutliple groups
-    if (!is.null(contrast) && n_lvl > 2) {
-        groups <- relevel(groups, ref = contrast[1])
-        sample_data(ps)[[group]] <- groups
-    }
+    # if (!is.null(contrast) && n_lvl > 2) {
+    #     groups <- relevel(groups, ref = contrast[1])
+    #     sample_data(ps)[[group]] <- groups
+    # }
 
 
     # preprocess phyloseq object
@@ -185,11 +191,19 @@ run_ancombc <- function(ps,
 
     global <- ifelse(n_lvl > 2, TRUE, FALSE)
     # ancombc differential abundance analysis
+    
+    if (taxa_rank == "all") {
+        ancombc_taxa_rank <- rank_names(ps_summarized)[1]
+    } else {
+        ancombc_taxa_rank <- taxa_rank
+    }
+    
     ancombc_out <- ANCOMBC::ancombc(
         ps_summarized,
-        formula = formula,
+        tax_level = ancombc_taxa_rank,
+        formula = fml_char,
         p_adj_method = p_adjust,
-        zero_cut = zero_cut,
+        prv_cut = prv_cut,
         lib_cut = lib_cut,
         group = group,
         struc_zero = struc_zero,
@@ -205,7 +219,7 @@ run_ancombc <- function(ps,
     # variable has > 2 levels
     keep_var <- c("W", "p_val", "q_val", "diff_abn")
     if (n_lvl > 2) {
-        # ANCOM-BC global test to determine taxa that are differentially 
+        # ANCOM-BC global test to determine taxa that are differentially
         # abundant between three or more groups of multiple samples.
         # global result to marker_table
         if (is.null(contrast)) {
@@ -218,6 +232,10 @@ run_ancombc <- function(ps,
         }
     } else {
         ancombc_out_res <- ancombc_out$res
+        # drop intercept
+        ancombc_out_res <- lapply(
+            ancombc_out_res,
+            function(x) x[-1])
         mtab <- do.call(
             cbind,
             ancombc_out_res[c("W", "p_val", "q_val", "diff_abn")]
@@ -226,7 +244,8 @@ run_ancombc <- function(ps,
     names(mtab) <- keep_var
 
     # determine enrich group based on coefficients
-    cf <- ancombc_out$res$beta
+    # drop intercept
+    cf <- ancombc_out$res$lfc[-1]
     if (n_lvl > 2) {
         if (!is.null(contrast)) {
             cf <- cf[exp_lvl]
